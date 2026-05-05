@@ -33,7 +33,7 @@ The primary goals are to reduce downtime, improve reliability, and lower operati
 - `ELK Stack` for log aggregation and analysis
 - `Python` for AI/ML logic and automation workflows
 - `GitHub Actions` for CI/CD automation
-- `Terraform` (optional) for infrastructure provisioning
+- `Terraform` for infrastructure provisioning
 
 ---
 
