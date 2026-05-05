@@ -97,8 +97,8 @@ The platform is organized into four main layers:
 ### Installation
 
 ```bash
-git clone https://github.com/yourusername/self-healing-infra.git
-cd self-healing-infra
+git clone https://github.com/aminuiliyasu/Self-Healing-Infrastructure-with-AI-Driven-Incident-Response.git
+cd Self-Healing-Infrastructure-with-AI-Driven-Incident-Response
 
 docker build -t self-healing-app .
 kubectl apply -f k8s/
