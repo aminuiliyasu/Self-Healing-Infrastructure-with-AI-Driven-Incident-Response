@@ -1,0 +1,6 @@
+#!/home/aminu-iliyasu/Documents/Self-Healing-Infrastructure-with-AI-Driven-Incident-Response/app/.venv/bin/python
+import sys
+from flask.cli import main
+if __name__ == '__main__':
+    sys.argv[0] = sys.argv[0].removesuffix('.exe')
+    sys.exit(main())
