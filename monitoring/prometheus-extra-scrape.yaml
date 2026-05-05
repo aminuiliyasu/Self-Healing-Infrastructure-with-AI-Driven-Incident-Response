@@ -1,0 +1,9 @@
+scrapeConfigs:
+  self-healing-app:
+    enabled: true
+    job_name: self-healing-app
+    scrape_interval: 5s
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - self-healing-app.default.svc.cluster.local:5000
