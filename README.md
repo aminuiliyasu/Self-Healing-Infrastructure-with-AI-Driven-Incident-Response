@@ -70,6 +70,8 @@ The platform is organized into four main layers:
 5. The automation engine applies the fix directly to infrastructure.
 6. The incident, decision, and action are recorded for audit and learning.
 
+**Remediation (demo):** On sustained high error rate the rules emit a `high_error_rate` incident. You can scale the workload with `automation/scale_deployment.sh` (uses `DRY_RUN` and `MAX_REPLICAS` for safety). Set `REMEDIATE=1` so the ai-engine invokes that script when a `high_error_rate` incident is raised (throttled by `REMEDIATE_COOLDOWN_SECONDS`). By default `REMEDIATE_DRY_RUN=true` so the script only prints the `kubectl scale` command; set `REMEDIATE_DRY_RUN=false` to apply a real scale. An operator or a future hook can run the same script with `DRY_RUN=false` and rely on `MAX_REPLICAS` (or `SCALE_MAX_REPLICAS` when called from the engine) to cap replicas.
+
 ---
 
 ## Example Incident Flow
@@ -105,6 +107,12 @@ kubectl apply -f k8s/
 kubectl apply -f monitoring/
 
 python ai-engine/main.py
+```
+
+Confirm the sample app deployment has finished rolling out (optional):
+
+```bash
+kubectl rollout status deployment/self-healing-app -n default
 ```
 
 ---
