@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  docker-build-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build application image
+        run: docker build -t self-healing-app:ci ./app
+
+      - name: Smoke test (/health)
+        run: |
+          set -euo pipefail
+          docker run -d --name app-ci -p 5050:5000 self-healing-app:ci
+          sleep 4
+          curl -fsS http://127.0.0.1:5050/health | grep -q OK
+          curl -fsS http://127.0.0.1:5050/metrics | head -n 5 | grep -q '^#'
+          docker rm -f app-ci
+
+  terraform-validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: terraform
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.0"
+
+      - name: terraform fmt -check
+        run: terraform fmt -check -recursive
+
+      - name: terraform init (local only)
+        run: terraform init -backend=false
+
+      - name: terraform validate
+        run: terraform validate

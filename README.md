@@ -102,7 +102,7 @@ The platform is organized into four main layers:
 git clone https://github.com/aminuiliyasu/Self-Healing-Infrastructure-with-AI-Driven-Incident-Response.git
 cd Self-Healing-Infrastructure-with-AI-Driven-Incident-Response
 
-docker build -t self-healing-app .
+docker build -t self-healing-app ./app
 kubectl apply -f k8s/
 kubectl apply -f monitoring/
 
@@ -115,6 +115,14 @@ Confirm the sample app deployment has finished rolling out (optional):
 kubectl rollout status deployment/self-healing-app -n default
 ```
 
+### CI/CD
+
+On every push or pull request to `main`/`master`, **GitHub Actions** builds the Docker image from `app/` and runs a short smoke test (`/health` and the start of `/metrics`). Terraform configuration under `terraform/` is validated (`fmt`, `init`, `validate`) without provisioning any cloud resources.
+
+### Infrastructure as code (Terraform)
+
+Local development uses **Minikube or Kind**; this repo does not require cloud credentials. See `terraform/README.md` for how a production cluster would typically be split into a separate Terraform module. The checked-in `terraform/` folder exists so CI can run `terraform validate` and document scope honestly.
+
 ---
 
 ## Project Structure
@@ -126,6 +134,7 @@ self-healing-infra/
 ├── ai-engine/          # Anomaly detection and decision logic
 ├── automation/         # Remediation scripts
 ├── app/                # Sample application to monitor
+├── terraform/          # IaC placeholder + docs (no cloud resources applied here)
 └── .github/workflows/  # CI/CD pipelines
 ```
 
