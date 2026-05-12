@@ -1,5 +1,17 @@
 # Self-Healing Infrastructure with AI-Driven Incident Response
 
+[GitHub repository](https://github.com/aminuiliyasu/Self-Healing-Infrastructure-with-AI-Driven-Incident-Response)
+
+## Project summary
+
+Built an autonomous infrastructure monitoring platform using Prometheus and Python to detect anomalies and trigger automated remediation workflows in real time.
+
+Developed a rule-based incident analysis engine that identified root causes from telemetry and executed corrective actions through Kubernetes and Bash automation.
+
+Improved operational efficiency and reduced incident response time through automated detection and self-healing workflows.
+
+Technologies: Python, Kubernetes, Prometheus, Terraform, Docker.
+
 ## Overview
 
 This project demonstrates a self-healing infrastructure platform that can detect, analyze, and remediate production incidents with minimal human intervention.
