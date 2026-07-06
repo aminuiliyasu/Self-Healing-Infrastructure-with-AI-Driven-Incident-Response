@@ -1,255 +1,169 @@
-# Self-Healing Infrastructure with AI-Driven Incident Response
+# Self-Healing Infrastructure with Incident Response
 
-[GitHub repository](https://github.com/aminuiliyasu/Self-Healing-Infrastructure-with-AI-Driven-Incident-Response)
+A monitoring and auto-remediation setup for Kubernetes. Prometheus scrapes a
+demo web service, a Python engine watches the metrics, classifies incidents
+with a small rule-based root-cause step, and fixes the common cases itself by
+restarting or scaling the deployment. Everything that happens is written to an
+incident log and shown on a web dashboard.
 
-## Project summary
+**Stack:** Python, Kubernetes (Minikube), Prometheus, Terraform, Docker, Bash, GitHub Actions
 
-Built an autonomous infrastructure monitoring platform using Prometheus and Python to detect anomalies and trigger automated remediation workflows in real time.
+## How it works
 
-Developed a rule-based incident analysis engine that identified root causes from telemetry and executed corrective actions through Kubernetes and Bash automation.
+![Architecture](assets/architecture.png)
 
-Improved operational efficiency and reduced incident response time through automated detection and self-healing workflows.
+1. The demo app (`app/`) exposes request, error and latency metrics on `/metrics`.
+2. Prometheus (installed by Terraform via Helm) scrapes it in the `dev` and `staging` namespaces.
+3. The engine (`engine/`) polls Prometheus and evaluates three rules:
 
-Technologies: Python, Kubernetes, Prometheus, Terraform, Docker.
+| Signal | Root cause | Action |
+|---|---|---|
+| target down (`up == 0`) | pod unreachable | restart deployment |
+| high error rate + high p95 latency | overload | scale deployment |
+| high error rate, normal latency | likely app bug | flag for investigation (scaling won't help) |
+| high p95 latency only | approaching overload | scale deployment |
 
-## Overview
+4. Remediation runs through the Bash scripts in `automation/`, with a cooldown
+   so it never restarts/scales in a loop, a replica cap, and a dry-run mode
+   that is **on by default**.
+5. Each incident is logged once when it opens and once when the metric
+   recovers, so the log gives real numbers: incident count, how many were
+   auto-remediated, and mean time to recover.
 
-This project demonstrates a self-healing infrastructure platform that can detect, analyze, and remediate production incidents with minimal human intervention.
+## Repo layout
 
-Traditional monitoring systems only alert engineers when something breaks. This system goes further by identifying anomalies, inferring likely root causes, and applying corrective actions in near real time.
-
-The primary goals are to reduce downtime, improve reliability, and lower operational overhead.
-
----
-
-## Key Features
-
-- Real-time monitoring of core service metrics (requests, latency, errors) via Prometheus
-- Rule-based incident signals from telemetry (extensible toward richer ML later)
-- Automated remediation hooks (scale deployment via script + optional ai-engine integration)
-- Kubernetes deployment of the sample workload
-- Grafana dashboards wired to Prometheus
-- CI validation: Docker image build + smoke test; Terraform `validate` (no cloud apply)
-
----
-
-## Tech Stack
-
-| Layer | Tools |
-|--------|--------|
-| App | Python, Flask, `prometheus_client` |
-| Containers | Docker |
-| Orchestration | Kubernetes (Minikube / Kind / cloud) |
-| Metrics | Prometheus (Helm chart in demo) |
-| Dashboards | Grafana (Helm chart in demo) |
-| Analysis | Python ai-engine (Prometheus HTTP API + rules) |
-| Automation | Bash + `kubectl` |
-| CI/CD | GitHub Actions |
-| IaC docs | Terraform stub + `terraform/README.md` (local cluster first; cloud module optional) |
-
----
-
-## System Architecture
-
-The platform is organized into four main layers:
-
-1. **Monitoring Layer** — Prometheus scrapes the sample app (`/metrics`) and cluster metrics.
-2. **Logging Layer** — ELK is listed as a future/extension path; the demo focuses on metrics-first.
-3. **Analysis Engine** (`ai-engine/`) — Polls Prometheus, evaluates rules, emits JSON incidents; optional remediation hook.
-4. **Automation Engine** (`automation/`) — Scales deployments via `kubectl` with dry-run and replica caps.
-
----
-
-## Workflow
-
-1. Metrics are scraped from the running service (Prometheus).
-2. The analysis engine evaluates PromQL-derived signals on an interval.
-3. When abnormal behavior is detected, rules classify an incident type (e.g. `high_error_rate`).
-4. Optionally, remediation runs (`automation/scale_deployment.sh`) with **dry-run by default**.
-5. Events are visible in logs (JSON lines) and in Grafana for metrics.
-
-**Remediation (demo):** On sustained high error rate the rules emit a `high_error_rate` incident. Use `automation/scale_deployment.sh` (`DRY_RUN`, `MAX_REPLICAS`). Set `REMEDIATE=1` so ai-engine invokes that script when a `high_error_rate` incident fires (throttled by `REMEDIATE_COOLDOWN_SECONDS`). Default **`REMEDIATE_DRY_RUN=true`** only prints the `kubectl scale` command; set **`REMEDIATE_DRY_RUN=false`** for a real scale. Replica caps: `MAX_REPLICAS` in the script or `SCALE_MAX_REPLICAS` when invoked from the engine.
-
----
-
-## Example Incident Flow
-
-**Scenario:** Elevated HTTP errors on the sample app.
-
-- Prometheus records `http_errors_total` and rates increase.
-- ai-engine crosses the error-rate threshold → `high_error_rate` incident JSON.
-- Operator or automation scales the Deployment (dry-run or real, per env).
-- Request/error metrics stabilize as replicas absorb load (demo assumption).
-
----
-
-## Prerequisites
-
-- **Docker** — build and run the app image
-- **Kubernetes** — Minikube or Kind recommended for local demos (`kubectl` configured)
-- **Python 3.10+** — ai-engine and local app run
-- **Helm** — optional but used below for Prometheus/Grafana install
-
----
-
-## Running the sample application
-
-### Option A — Local (fastest for code changes)
-
-```bash
-cd app
-python3 -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt
-python3 app.py
+```
+app/          demo Flask service with Prometheus metrics (+ /error and /slow test endpoints)
+engine/       monitoring loop, rules, incident log, unit tests
+dashboard/    read-only web UI: live metrics, incidents, remediations, MTTR
+automation/   kubectl scale/restart scripts (dry-run by default)
+k8s/          kustomize base + dev/staging overlays
+terraform/    namespaces (dev, staging, monitoring) + Prometheus Helm release
+monitoring/   Prometheus Helm values (scrape configs, NodePort)
+scripts/      deploy.sh, inject_errors.sh
 ```
 
-Endpoints: `http://localhost:5000/` · `/health` · `/metrics`
+## Running it
 
-If port **5000** is busy: `python3 -c "from app import app; app.run(host='0.0.0.0', port=5001)"`
+Needs Docker, Minikube, kubectl, Terraform and Python 3.10+.
 
-### Option B — Docker
-
-From the **repository root**:
+**1. Cluster + infrastructure**
 
 ```bash
-docker build -t self-healing-app ./app
-docker run --rm -p 5002:5000 self-healing-app
+minikube start
+cd terraform && terraform init && terraform apply && cd ..
 ```
 
-Open `http://localhost:5002/health`
+This creates the `dev`, `staging` and `monitoring` namespaces and installs
+Prometheus (NodePort 30090).
 
-### Option C — Kubernetes (Minikube)
+**2. Deploy the app**
 
 ```bash
-docker build -t self-healing-app:latest ./app
-minikube image load self-healing-app:latest   # so the cluster can use your local image
-
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-kubectl rollout status deployment/self-healing-app -n default
-
-minikube service self-healing-app --url
+./scripts/deploy.sh dev        # or: ./scripts/deploy.sh staging
+minikube service self-healing-app -n dev --url
 ```
 
-Use the printed URL for `/health` and `/metrics`.
-
----
-
-## Observability (Prometheus + Grafana)
-
-Prometheus and Grafana are installed with **Helm** (not plain `kubectl apply` on `monitoring/`). Example:
+**3. Start the engine**
 
 ```bash
-helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-helm repo add grafana https://grafana.github.io/helm-charts
-helm repo update
-
-helm install monitoring prometheus-community/prometheus \
-  --namespace monitoring --create-namespace \
-  --set server.service.type=NodePort \
-  --set server.service.nodePort=30090
-
-# Add scrape config for the sample app (after deploy + Service exist)
-helm upgrade monitoring prometheus-community/prometheus \
-  --namespace monitoring --reuse-values \
-  -f monitoring/prometheus-extra-scrape.yaml
-```
-
-Install Grafana similarly (see your cluster notes); set the Prometheus datasource URL inside the cluster to:
-
-`http://monitoring-prometheus-server.monitoring.svc.cluster.local`
-
-Expose UIs with `minikube service -n monitoring … --url` as needed.
-
----
-
-## Analysis engine (`ai-engine/`)
-
-From repo root (or `cd ai-engine` and adjust imports / run `python main.py`):
-
-```bash
-cd ai-engine
+cd engine
 python3 -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 
-export PROMETHEUS_URL=http://<minikube-ip>:30090   # Prometheus NodePort on host
-export APP_JOB=self-healing-app
-export REMEDIATE=0                                  # set to 1 to invoke automation hook
-export REMEDIATE_DRY_RUN=true                       # false to allow real kubectl scale from engine
-
+export PROMETHEUS_URL=http://$(minikube ip):30090
+export REMEDIATE=1                 # actually run remediation scripts
+export REMEDIATE_DRY_RUN=false     # false = real kubectl commands
 python3 main.py
 ```
 
-Useful variables: `POLL_INTERVAL_SECONDS`, `ERROR_RATE_THRESHOLD`, `SCALE_NAMESPACE`, `SCALE_DEPLOYMENT`, `SCALE_TARGET_REPLICAS`, `SCALE_MAX_REPLICAS`, `REMEDIATE_COOLDOWN_SECONDS`.
+The engine prints one JSON line per event and appends everything to
+`data/incidents.jsonl`.
 
----
-
-## Automation (`automation/`)
+**4. Dashboard (optional)**
 
 ```bash
-chmod +x automation/scale_deployment.sh
-DRY_RUN=true NAMESPACE=default DEPLOYMENT=self-healing-app TARGET_REPLICAS=3 ./automation/scale_deployment.sh
+cd dashboard
+pip install -r requirements.txt
+export PROMETHEUS_URL=http://$(minikube ip):30090
+python3 app.py                     # http://localhost:8080
 ```
 
-Set `DRY_RUN=false` only when your kube context is correct and you accept scaling.
+## Demo: break it and watch it heal
 
----
+```bash
+# terminal 1: engine running with REMEDIATE=1 (see above)
 
-## CI/CD
-
-On push or pull request to **`main`** / **`master`**, GitHub Actions:
-
-1. Builds `docker build ./app` and smoke-tests `/health` and `/metrics`.
-2. Runs `terraform fmt -check`, `terraform init -backend=false`, and `terraform validate` in `terraform/` (no cloud resources created).
-
----
-
-## Infrastructure as code (Terraform)
-
-Local development targets **Minikube or Kind**; no cloud credentials are required to use this repo. See **`terraform/README.md`** for production-oriented notes. The root **`terraform/main.tf`** exists for CI validation and documentation—not to provision a cloud cluster by default.
-
----
-
-## Project Structure
-
-```text
-├── app/                  # Flask sample app + Dockerfile
-├── ai-engine/            # Prometheus polling + rules + optional remediation hook
-├── automation/           # kubectl scale script (dry-run safe)
-├── k8s/                  # Deployment + Service for the app
-├── monitoring/           # Helm values snippets (e.g. extra Prometheus scrape config)
-├── terraform/            # Minimal TF + README (scope / CI validate)
-└── .github/workflows/    # CI
+# terminal 2: generate errors against the dev app
+./scripts/inject_errors.sh http://$(minikube ip):30051 200
 ```
 
----
+Within a poll or two the engine opens a `high_error_rate` incident, decides on
+a remediation and runs the matching script. When the error rate drops back
+under the threshold it logs the incident as resolved with the recovery time.
+You can watch all of it on the dashboard, or check the totals with:
 
-## Current Limitations
+```bash
+cd engine && python3 summarize.py
+```
 
-- Rule-based signals; ML is intentionally minimal / future work.
-- Logging stack (ELK) not wired in the default path.
-- Terraform does not create cloud clusters in CI or by default.
+To simulate a crash instead, scale the app to zero
+(`kubectl scale deployment/self-healing-app -n dev --replicas=0`) — the
+`target_down` rule triggers a rollout restart.
 
----
+Here's the dashboard after a demo run — a `target_down` incident was detected
+and auto-remediated with a rollout restart, plus a few `high_error_rate`
+incidents that were correctly classified as "scaling won't help, check the
+logs" and left alone:
 
-## Future Improvements
+![Dashboard after a demo run](assets/dashboard.png)
 
-- Richer anomaly detection and incident deduplication
-- Log correlation (Loki or ELK) and tracing
-- GitOps (Argo CD / Flux) for manifests
-- External alerting (PagerDuty, Slack)
-- Optional cloud Terraform module for GKE/EKS/AKS (separate secrets / workspace)
+## Configuration
 
----
+All engine settings are environment variables (defaults in `engine/config.py`):
 
-## Why This Project
+| Variable | Default | Meaning |
+|---|---|---|
+| `PROMETHEUS_URL` | `http://127.0.0.1:9090` | Prometheus base URL |
+| `APP_JOB` | `self-healing-app-dev` | scrape job to watch (`-staging` for staging) |
+| `POLL_INTERVAL_SECONDS` | `15` | how often to evaluate rules |
+| `ERROR_RATE_THRESHOLD` | `0.05` | errors/s that count as an incident |
+| `LATENCY_P95_THRESHOLD_SECONDS` | `0.5` | p95 latency threshold |
+| `REMEDIATE` | `0` | `1` = engine may run remediation scripts |
+| `REMEDIATE_DRY_RUN` | `true` | `true` = only print the kubectl command |
+| `REMEDIATE_COOLDOWN_SECONDS` | `120` | minimum gap between two runs of the same action |
+| `SCALE_TARGET_REPLICAS` / `SCALE_MAX_REPLICAS` | `3` / `5` | scale target and hard cap |
 
-- Designing and operating distributed systems
-- Combining observability with safe automation
-- Clear boundaries: metrics → decisions → optional remediation
+## Tests and CI
 
----
+```bash
+cd engine && python3 -m unittest -v
+```
+
+GitHub Actions runs on every push/PR: engine unit tests, Docker build with an
+endpoint smoke test, `kubectl kustomize` build of both overlays, and
+`terraform fmt`/`validate` (no cloud credentials needed).
+
+## Design notes
+
+- **Dry-run by default.** Anything that touches the cluster only prints the
+  command unless you explicitly opt in. Automation that can scale or restart
+  things should be safe to run by accident.
+- **Cooldowns and caps.** The engine won't fire the same action twice inside
+  the cooldown window, and the scale script refuses to go past `MAX_REPLICAS`.
+- **Terraform for infra, kustomize for the app.** Namespaces and Prometheus
+  are long-lived infrastructure; app deploys happen much more often, so they
+  go through a separate, faster path.
+- **Rules, not ML.** "AI-driven" here is a deliberately simple rule engine.
+  For the failure modes this covers, rules are debuggable and predictable;
+  swapping in something smarter would only mean changing `engine/rules.py`.
+
+## Limitations / ideas
+
+- Rules only look at instant values; no trend detection or dedup across restarts.
+- No log correlation (Loki/ELK) — root causing is metrics-only.
+- Alerting integration (Slack webhook) would be the next practical addition.
 
 ## License
 
-MIT License
+MIT — see [LICENSE](LICENSE).

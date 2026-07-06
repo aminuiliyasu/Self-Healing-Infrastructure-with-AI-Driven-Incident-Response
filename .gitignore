@@ -23,8 +23,8 @@ Thumbs.db
 # Logs
 *.log
 
-# Docker
-*.pid
+# Engine output
+data/
 
 # Terraform
 .terraform/
@@ -33,4 +33,6 @@ Thumbs.db
 crash.log
 *.tfvars
 *.tfvars.json
-.terraform.lock.hcl
+
+# Personal notes, not part of the project
+docs/

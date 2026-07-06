@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import urllib.parse
 from typing import Any, Optional
 
 import requests
 
+
 class PrometheusApiError(RuntimeError):
     pass
 
+
 def query_instant(prometheus_base_url: str, promql: str, timeout: float) -> Optional[float]:
-    """
-    Run an instant query. Returns the first sample value as float, or None if no series.
-    """
     url = f"{prometheus_base_url}/api/v1/query"
     resp = requests.get(
         url,

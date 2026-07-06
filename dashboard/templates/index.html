@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="refresh" content="10">
+  <title>Self-Healing Dashboard</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, sans-serif; margin: 0; background: #f5f6f8; color: #222; }
+    header { background: #1f3a5f; color: #fff; padding: 14px 24px; }
+    header h1 { margin: 0; font-size: 1.2rem; font-weight: 600; }
+    header p { margin: 4px 0 0; font-size: 0.8rem; opacity: 0.8; }
+    main { max-width: 1000px; margin: 0 auto; padding: 20px 24px 40px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px; margin-bottom: 24px; }
+    .card { background: #fff; border-radius: 8px; padding: 14px 16px; border: 1px solid #e3e5e8; }
+    .card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; color: #667; }
+    .card .value { font-size: 1.5rem; font-weight: 600; margin-top: 4px; }
+    .good { color: #14683a; }
+    .bad { color: #a02020; }
+    .muted { color: #889; }
+    h2 { font-size: 1rem; margin: 24px 0 8px; }
+    table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid #e3e5e8; border-radius: 8px; overflow: hidden; }
+    th, td { text-align: left; padding: 8px 12px; font-size: 0.85rem; border-bottom: 1px solid #eef0f2; }
+    th { background: #fafbfc; font-weight: 600; color: #556; }
+    tr:last-child td { border-bottom: none; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 9px; font-size: 0.75rem; }
+    .tag.critical { background: #fbdcdc; color: #a02020; }
+    .tag.warning { background: #fdf1d7; color: #8a6100; }
+    .tag.ok { background: #d9f2e0; color: #14683a; }
+    .empty { color: #889; font-size: 0.85rem; padding: 12px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Self-Healing Dashboard</h1>
+    <p>job: {{ app_job }} &middot; prometheus: {{ prometheus_url }} &middot; refreshes every 10s</p>
+  </header>
+  <main>
+    <div class="cards">
+      <div class="card">
+        <div class="label">Target</div>
+        {% if metrics.up == 1 %}
+          <div class="value good">UP</div>
+        {% elif metrics.up is none %}
+          <div class="value muted">no data</div>
+        {% else %}
+          <div class="value bad">DOWN</div>
+        {% endif %}
+      </div>
+      <div class="card">
+        <div class="label">Requests / s</div>
+        <div class="value">{{ "%.2f"|format(metrics.request_rate) if metrics.request_rate is not none else "–" }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Errors / s</div>
+        <div class="value {{ 'bad' if metrics.error_rate and metrics.error_rate > 0.05 else '' }}">
+          {{ "%.3f"|format(metrics.error_rate) if metrics.error_rate is not none else "–" }}
+        </div>
+      </div>
+      <div class="card">
+        <div class="label">p95 latency</div>
+        <div class="value">{{ "%.0f ms"|format(metrics.latency_p95 * 1000) if metrics.latency_p95 is not none else "–" }}</div>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="label">Incidents</div>
+        <div class="value">{{ summary.incidents }}</div>
+      </div>
+      <div class="card">
+        <div class="label">Auto-remediated</div>
+        <div class="value">{{ summary.auto_resolved }} ({{ summary.auto_resolution_pct }}%)</div>
+      </div>
+      <div class="card">
+        <div class="label">Mean time to recover</div>
+        <div class="value">{{ "%.0f s"|format(summary.mttr_seconds) if summary.mttr_seconds is not none else "–" }}</div>
+      </div>
+    </div>
+
+    <h2>Recent incidents</h2>
+    {% if incidents %}
+    <table>
+      <tr><th>Time</th><th>Type</th><th>Severity</th><th>Root cause</th><th>Suggested action</th></tr>
+      {% for row in incidents %}
+      <tr>
+        <td>{{ short_time(row.at) }}</td>
+        <td>{{ row.incident.type }}</td>
+        <td><span class="tag {{ row.incident.severity }}">{{ row.incident.severity }}</span></td>
+        <td>{{ row.incident.root_cause }}</td>
+        <td>{{ row.incident.remediation }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No incidents recorded yet.</div>
+    {% endif %}
+
+    <h2>Remediations</h2>
+    {% if remediations %}
+    <table>
+      <tr><th>Time</th><th>Incident</th><th>Action</th><th>Dry run</th><th>Result</th></tr>
+      {% for row in remediations %}
+      <tr>
+        <td>{{ short_time(row.started_at) }}</td>
+        <td>{{ row.incident_type }}</td>
+        <td>{{ row.action }}</td>
+        <td>{{ "yes" if row.detail.dry_run else "no" }}</td>
+        <td><span class="tag {{ 'ok' if row.success else 'critical' }}">{{ "success" if row.success else "failed" }}</span></td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">No remediations executed yet.</div>
+    {% endif %}
+
+    <h2>Resolved incidents</h2>
+    {% if resolutions %}
+    <table>
+      <tr><th>Opened</th><th>Resolved</th><th>Type</th><th>Recovery time</th></tr>
+      {% for row in resolutions %}
+      <tr>
+        <td>{{ short_time(row.opened_at) }}</td>
+        <td>{{ short_time(row.resolved_at) }}</td>
+        <td>{{ row.incident_type }}</td>
+        <td>{{ "%.0f s"|format(row.duration_seconds) }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}
+    <div class="empty">Nothing resolved yet.</div>
+    {% endif %}
+  </main>
+</body>
+</html>

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Required
-NAMESPACE="${NAMESPACE:-default}"
+NAMESPACE="${NAMESPACE:-dev}"
 DEPLOYMENT="${DEPLOYMENT:-self-healing-app}"
 TARGET_REPLICAS="${TARGET_REPLICAS:-3}"
 
